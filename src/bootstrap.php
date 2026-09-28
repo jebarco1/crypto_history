@@ -58,11 +58,28 @@ function crypto_config(): array
     return $config;
 }
 
+function crypto_database(?array $config = null): \PDO
+{
+    static $pdo = null;
+    static $path = null;
+
+    $config ??= crypto_config();
+    $dbPath = (string) $config['db_path'];
+    if ($pdo instanceof \PDO && $path === $dbPath) {
+        return $pdo;
+    }
+
+    $pdo = \CryptoHistory\Database::connect($dbPath);
+    $path = $dbPath;
+
+    return $pdo;
+}
+
 function crypto_store(?array $config = null): \CryptoHistory\PriceStore
 {
     $config ??= crypto_config();
 
-    return new \CryptoHistory\PriceStore(\CryptoHistory\Database::connect((string) $config['db_path']));
+    return new \CryptoHistory\PriceStore(crypto_database($config));
 }
 
 function crypto_sync(?array $config = null): \CryptoHistory\HistorySync

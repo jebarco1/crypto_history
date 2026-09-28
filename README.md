@@ -4,7 +4,7 @@ Local PHP service that stores Binance spot prices and returns them by coin, date
 
 Hourly USDT candles are saved in SQLite. A lookup at `13:45` returns the `13:00`–`14:00` candle. `price` is that candle’s close. `open`, `high`, `low`, and `close` are the rest of the bar. Times are UTC.
 
-No API key is required. Data comes from the public Binance market-data host.
+Candle data comes from Binance's public market-data host, so Binance does not need a key. The lookup API requires a token you create locally.
 
 ## Requirements
 
@@ -55,6 +55,27 @@ This saves every candle since the last stored hour, including the hour that was 
 
 If a coin has never been backfilled, the daily script only saves the last 48 hours and tells you to run the backfill.
 
+## API token
+
+Price, range, and symbol routes require a token. Health and the route index stay open. The token is stored as a hash. The raw value is printed once.
+
+```bash
+php bin/token.php create --name=laptop
+php bin/token.php list
+php bin/token.php revoke --name=laptop
+```
+
+Send it on each request:
+
+```bash
+curl -H "Authorization: Bearer YOUR_TOKEN" \
+  "http://127.0.0.1:8080/api/v1/price?symbol=BTC&date=2024-06-01&time=13:45"
+```
+
+`X-Api-Key: YOUR_TOKEN` is also accepted. A token in the query string is ignored.
+
+`CRYPTO_API_TOKEN` is an extra accepted token when you would rather set one in the environment than create a named token. Named tokens can be revoked. The environment token cannot.
+
 ## Lookup API
 
 From the project directory:
@@ -70,7 +91,8 @@ The server listens on `http://127.0.0.1:8080`. Point Apache or nginx at the `pub
 `symbol`, `date`, and `time` are required. `time` is `HH:MM` or `HH:MM:SS` in UTC.
 
 ```bash
-curl "http://127.0.0.1:8080/api/v1/price?symbol=BTC&date=2024-06-01&time=13:45"
+curl -H "Authorization: Bearer YOUR_TOKEN" \
+  "http://127.0.0.1:8080/api/v1/price?symbol=BTC&date=2024-06-01&time=13:45"
 ```
 
 ```json
@@ -100,8 +122,10 @@ A time Binance never published (a trading halt) returns 404. The coin is still s
 The same lookup accepts a single timestamp, or a path:
 
 ```bash
-curl "http://127.0.0.1:8080/api/v1/price?symbol=BTC&at=2024-06-01T13:45:00Z"
-curl "http://127.0.0.1:8080/api/v1/price/BTC/2024-06-01/13-45"
+curl -H "Authorization: Bearer YOUR_TOKEN" \
+  "http://127.0.0.1:8080/api/v1/price?symbol=BTC&at=2024-06-01T13:45:00Z"
+curl -H "Authorization: Bearer YOUR_TOKEN" \
+  "http://127.0.0.1:8080/api/v1/price/BTC/2024-06-01/13-45"
 ```
 
 ### A range
@@ -109,31 +133,20 @@ curl "http://127.0.0.1:8080/api/v1/price/BTC/2024-06-01/13-45"
 `from` and `to` accept a date (`2024-06-01`) or a timestamp. A date-only `to` includes the whole UTC day. Results are paged. `limit` defaults to 500 and cannot be higher than 5000. Pass `next_from` back in as `from` for the next page.
 
 ```bash
-curl "http://127.0.0.1:8080/api/v1/prices?symbol=ETH&from=2024-06-01&to=2024-06-03&limit=100"
+curl -H "Authorization: Bearer YOUR_TOKEN" \
+  "http://127.0.0.1:8080/api/v1/prices?symbol=ETH&from=2024-06-01&to=2024-06-03&limit=100"
 ```
 
 ### Which coins are loaded
 
 ```bash
-curl "http://127.0.0.1:8080/api/v1/symbols"
+curl -H "Authorization: Bearer YOUR_TOKEN" \
+  "http://127.0.0.1:8080/api/v1/symbols"
 ```
 
-`GET /` lists the routes. `GET /api/v1/health` reports that the process is up.
+`GET /` lists the routes. `GET /api/v1/health` reports that the process is up. Neither requires a token.
 
 Coins not listed in `config/symbols.php` return 404. A time with no stored candle returns 404.
-
-## Optional API token
-
-Leave `CRYPTO_API_TOKEN` unset for local use. When it is set, `/api/v1/price`, `/api/v1/prices`, and `/api/v1/symbols` require it. Health and the route index stay open.
-
-```bash
-export CRYPTO_API_TOKEN=choose-a-long-token
-php bin/serve.php
-curl -H "Authorization: Bearer choose-a-long-token" \
-  "http://127.0.0.1:8080/api/v1/price?symbol=BTC&date=2024-06-01&time=13:45"
-```
-
-`X-Api-Key` and `?api_key=` are accepted as well.
 
 ## Candle size
 

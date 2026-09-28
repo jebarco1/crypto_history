@@ -11,4 +11,6 @@ if (PHP_SAPI === 'cli-server') {
 
 require dirname(__DIR__) . '/src/bootstrap.php';
 
-(new CryptoHistory\Api(crypto_config(), crypto_store()))->handle();
+$config = crypto_config();
+$pdo = crypto_database($config);
+(new CryptoHistory\Api($config, new CryptoHistory\PriceStore($pdo), new CryptoHistory\ApiTokens($pdo)))->handle();

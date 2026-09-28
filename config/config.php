@@ -20,8 +20,8 @@ return [
     'years' => (int) (getenv('CRYPTO_YEARS') ?: 5),
     'quote' => 'USDT',
 
-    // Leave empty for open local use. When set, data routes require this token
-    // via Authorization: Bearer, X-Api-Key, or ?api_key=
+    // Optional extra token accepted alongside tokens created by bin/token.php.
+    // Price routes always require a token. This env value is one way to set one.
     'api_token' => getenv('CRYPTO_API_TOKEN') ?: '',
 
     // Pause between Binance calls so a full backfill stays under the rate limit.

@@ -5,6 +5,7 @@ declare(strict_types=1);
 require dirname(__DIR__) . '/src/bootstrap.php';
 
 use CryptoHistory\Api;
+use CryptoHistory\ApiTokens;
 use CryptoHistory\CandleTime;
 use CryptoHistory\Database;
 use CryptoHistory\PriceStore;
@@ -74,7 +75,9 @@ try {
 
 $dbPath = sys_get_temp_dir() . '/crypto-history-test-' . getmypid() . '.sqlite';
 @unlink($dbPath);
-$store = new PriceStore(Database::connect($dbPath));
+$pdo = Database::connect($dbPath);
+$store = new PriceStore($pdo);
+$tokens = new ApiTokens($pdo);
 $store->assertInterval('1h');
 
 $open = $hour;
@@ -122,7 +125,25 @@ $config = [
     'years' => 5,
 ];
 
-$api = new Api($config, $store);
+$testToken = $tokens->create('test');
+check(str_starts_with($testToken, 'ch_'), 'created token has the ch_ prefix');
+check_same(46, strlen($testToken), 'created token length');
+try {
+    $tokens->create('test');
+    check(false, 'duplicate token name rejected');
+} catch (InvalidArgumentException) {
+    check(true, 'duplicate token name rejected');
+}
+try {
+    $tokens->create('bad name');
+    check(false, 'invalid token name rejected');
+} catch (InvalidArgumentException) {
+    check(true, 'invalid token name rejected');
+}
+
+$api = new Api($config, $store, $tokens);
+[$status] = call_api($api, '/api/v1/price?symbol=BTC&date=2024-06-01&time=13:45', false);
+check_same(401, $status, 'price without a token is 401');
 [$status, $body] = call_api($api, '/api/v1/price?symbol=BTC&date=2024-06-01&time=13:45');
 check_same(200, $status, 'price status');
 check_same('106', $body['price'] ?? null, 'price is the hourly close');
@@ -168,16 +189,40 @@ check_same(0, $body['symbols'][1]['candles'] ?? null, 'ETH is listed with no can
 check_same(200, $status, 'index status');
 check(isset($body['endpoints']['price']), 'index documents the price route');
 
-$secured = $config;
-$secured['api_token'] = 'secret-token';
-$locked = new Api($secured, $store);
-[$status] = call_api($locked, '/api/v1/price?symbol=BTC&date=2024-06-01&time=13:45');
-check_same(401, $status, 'token required when configured');
-[$status, $body] = call_api($locked, '/api/v1/price?symbol=BTC&date=2024-06-01&time=13:45&api_key=secret-token');
-check_same(200, $status, 'query token accepted');
-check_same('106', $body['price'] ?? null, 'authorized price');
-[$status] = call_api($locked, '/api/v1/health');
+[$status] = call_api($api, '/api/v1/price?symbol=BTC&date=2024-06-01&time=13:45', 'wrong-token');
+check_same(401, $status, 'wrong token is 401');
+[$status] = call_api($api, '/api/v1/price?symbol=BTC&date=2024-06-01&time=13:45&api_key=' . rawurlencode($testToken), false);
+check_same(401, $status, 'query string token is ignored');
+[$status, $body] = call_api($api, '/api/v1/price?symbol=BTC&date=2024-06-01&time=13:45', false, $testToken);
+check_same(200, $status, 'X-Api-Key accepted');
+check_same('106', $body['price'] ?? null, 'X-Api-Key price');
+
+$used = $tokens->list();
+check_same('test', $used[0]['name'] ?? null, 'token list shows the name');
+check($used[0]['last_used_at'] !== null, 'successful auth records last use');
+check(!str_contains(json_encode($used, JSON_THROW_ON_ERROR), $testToken), 'token list does not contain the secret');
+
+$envConfig = $config;
+$envConfig['api_token'] = 'env-secret';
+$envApi = new Api($envConfig, $store, $tokens);
+[$status, $body] = call_api($envApi, '/api/v1/price?symbol=BTC&date=2024-06-01&time=13:45', 'env-secret');
+check_same(200, $status, 'CRYPTO_API_TOKEN is accepted');
+check_same('106', $body['price'] ?? null, 'env token price');
+
+[$status] = call_api($api, '/api/v1/health', false);
 check_same(200, $status, 'health stays open');
+[$status, $body] = call_api($api, '/api/v1', false);
+check_same('Authorization: Bearer <token>', $body['auth'] ?? null, 'index documents bearer auth');
+
+$tokens->revoke('test');
+[$status] = call_api($api, '/api/v1/price?symbol=BTC&date=2024-06-01&time=13:45');
+check_same(401, $status, 'revoked token is rejected');
+try {
+    $tokens->revoke('test');
+    check(false, 'revoking a missing token fails');
+} catch (InvalidArgumentException) {
+    check(true, 'revoking a missing token fails');
+}
 
 $symbols = new Symbols($config);
 check_same(['BTC'], $symbols->select('btc'), 'symbol subset');
@@ -214,9 +259,14 @@ function candle(int $openMs, string $open, string $high, string $low, string $cl
     ];
 }
 
-/** @return array{0: int, 1: array<string, mixed>} */
-function call_api(Api $api, string $uri): array
+/**
+ * @param string|false|null $bearer null sends $testToken, false sends no bearer
+ * @return array{0: int, 1: array<string, mixed>}
+ */
+function call_api(Api $api, string $uri, string|false|null $bearer = null, ?string $apiKey = null): array
 {
+    global $testToken;
+
     $_SERVER['REQUEST_METHOD'] = 'GET';
     $_SERVER['REQUEST_URI'] = $uri;
     $_SERVER['SCRIPT_NAME'] = '/index.php';
@@ -225,6 +275,15 @@ function call_api(Api $api, string $uri): array
     $query = parse_url($uri, PHP_URL_QUERY);
     if (is_string($query)) {
         parse_str($query, $_GET);
+    }
+    if ($bearer === null) {
+        $bearer = $testToken;
+    }
+    if (is_string($bearer) && $bearer !== '') {
+        $_SERVER['HTTP_AUTHORIZATION'] = 'Bearer ' . $bearer;
+    }
+    if ($apiKey !== null) {
+        $_SERVER['HTTP_X_API_KEY'] = $apiKey;
     }
 
     ob_start();

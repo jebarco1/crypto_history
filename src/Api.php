@@ -14,6 +14,7 @@ final class Api
     public function __construct(
         private readonly array $config,
         private readonly PriceStore $store,
+        private readonly ApiTokens $tokens,
     ) {
         $this->symbols = new Symbols($config);
         $stored = $store->getMeta('interval');
@@ -106,6 +107,7 @@ final class Api
             'name' => 'crypto-history',
             'interval' => $this->interval,
             'timezone' => 'UTC',
+            'auth' => 'Authorization: Bearer <token>',
             'endpoints' => [
                 'symbols' => '/api/v1/symbols',
                 'price' => '/api/v1/price?symbol=BTC&date=2024-06-01&time=13:45',
@@ -269,23 +271,21 @@ final class Api
 
     private function authorize(): void
     {
-        $token = (string) ($this->config['api_token'] ?? '');
-        if ($token === '') {
-            return;
-        }
-
-        $header = (string) ($_SERVER['HTTP_AUTHORIZATION'] ?? '');
-        $apiKey = (string) ($_SERVER['HTTP_X_API_KEY'] ?? '');
-        $query = isset($_GET['api_key']) ? (string) $_GET['api_key'] : '';
-        $bearer = '';
-        if (preg_match('/^Bearer\s+(\S+)$/i', $header, $m) === 1) {
-            $bearer = $m[1];
-        }
-
-        $presented = $bearer !== '' ? $bearer : ($apiKey !== '' ? $apiKey : $query);
-        if ($presented === '' || !hash_equals($token, $presented)) {
+        $presented = $this->presentedToken();
+        $envToken = (string) ($this->config['api_token'] ?? '');
+        if ($presented === '' || !$this->tokens->matches($presented, $envToken)) {
             throw new HttpException(401, 'Missing or invalid API token');
         }
+    }
+
+    private function presentedToken(): string
+    {
+        $header = (string) ($_SERVER['HTTP_AUTHORIZATION'] ?? '');
+        if (preg_match('/^Bearer\s+(\S+)$/i', $header, $m) === 1) {
+            return $m[1];
+        }
+
+        return trim((string) ($_SERVER['HTTP_X_API_KEY'] ?? ''));
     }
 
     private function path(): string
@@ -322,6 +322,9 @@ final class Api
     {
         if (!headers_sent()) {
             $this->sendHeaders();
+            if ($status === 401 && PHP_SAPI !== 'cli') {
+                header('WWW-Authenticate: Bearer realm="crypto-history"');
+            }
         }
         $this->json(['error' => $message], $status);
     }
