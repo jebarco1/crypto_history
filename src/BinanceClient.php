@@ -8,14 +8,16 @@ use JsonException;
 use RuntimeException;
 
 /**
- * Public Binance spot klines. No API key.
+ * Public Binance spot klines.
  * Each candle is [open time, open, high, low, close, volume, close time, ...].
+ * An API key is optional and is sent as X-MBX-APIKEY when set.
  */
 final class BinanceClient
 {
     public function __construct(
         private readonly string $baseUrl,
         private readonly int $pauseUs = 150000,
+        private readonly string $apiKey = '',
     ) {
     }
 
@@ -124,16 +126,21 @@ final class BinanceClient
             throw new RuntimeException('Unable to start a Binance request');
         }
 
+        $headers = [
+            'Accept: application/json',
+            'User-Agent: crypto-history/1.0',
+        ];
+        if ($this->apiKey !== '') {
+            $headers[] = 'X-MBX-APIKEY: ' . $this->apiKey;
+        }
+
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_HEADER => true,
             CURLOPT_TIMEOUT => 30,
             CURLOPT_CONNECTTIMEOUT => 10,
             CURLOPT_FOLLOWLOCATION => false,
-            CURLOPT_HTTPHEADER => [
-                'Accept: application/json',
-                'User-Agent: crypto-history/1.0',
-            ],
+            CURLOPT_HTTPHEADER => $headers,
         ]);
 
         $raw = curl_exec($ch);

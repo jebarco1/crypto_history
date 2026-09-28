@@ -8,8 +8,12 @@ return [
     // SQLite file created on the first backfill or update.
     'db_path' => getenv('CRYPTO_DB_PATH') ?: ($root . '/data/prices.sqlite'),
 
-    // Public market-data host. No API key. Same klines as api.binance.com.
+    // Public market-data host. Same klines as api.binance.com.
     'binance_base' => getenv('CRYPTO_BINANCE_BASE') ?: 'https://data-api.binance.vision',
+
+    // Optional. Sent as X-MBX-APIKEY when downloading candles. Leave empty to
+    // use the public endpoint with no key. Set BINANCE_API_KEY in .env.
+    'binance_api_key' => getenv('BINANCE_API_KEY') ?: '',
 
     // Candle size stored in the database. 1h lets a date+time lookup
     // return the hour that contains that timestamp.

@@ -25,6 +25,48 @@ if (is_file($vendor)) {
     });
 }
 
+/**
+ * Load KEY=value pairs from a file into the environment.
+ * Variables already set in the process are left unchanged.
+ */
+function crypto_load_env(string $path): void
+{
+    if (!is_file($path)) {
+        return;
+    }
+
+    $lines = file($path, FILE_IGNORE_NEW_LINES);
+    if ($lines === false) {
+        return;
+    }
+
+    foreach ($lines as $line) {
+        $line = trim($line);
+        if ($line === '' || str_starts_with($line, '#')) {
+            continue;
+        }
+        if (!str_contains($line, '=')) {
+            continue;
+        }
+
+        [$name, $value] = explode('=', $line, 2);
+        $name = trim($name);
+        $value = trim($value);
+        if ($name === '' || getenv($name) !== false) {
+            continue;
+        }
+        if (
+            (str_starts_with($value, '"') && str_ends_with($value, '"'))
+            || (str_starts_with($value, "'") && str_ends_with($value, "'"))
+        ) {
+            $value = substr($value, 1, -1);
+        }
+
+        putenv($name . '=' . $value);
+        $_ENV[$name] = $value;
+    }
+}
+
 /** @return array<string, mixed> */
 function crypto_config(): array
 {
@@ -32,6 +74,8 @@ function crypto_config(): array
     if ($config !== null) {
         return $config;
     }
+
+    crypto_load_env(dirname(__DIR__) . '/.env');
 
     /** @var array<string, mixed> $loaded */
     $loaded = require dirname(__DIR__) . '/config/config.php';
@@ -88,7 +132,11 @@ function crypto_sync(?array $config = null): \CryptoHistory\HistorySync
     $interval = (string) $config['interval'];
 
     return new \CryptoHistory\HistorySync(
-        new \CryptoHistory\BinanceClient((string) $config['binance_base'], (int) $config['request_pause_us']),
+        new \CryptoHistory\BinanceClient(
+            (string) $config['binance_base'],
+            (int) $config['request_pause_us'],
+            (string) ($config['binance_api_key'] ?? ''),
+        ),
         crypto_store($config),
         new \CryptoHistory\Symbols($config),
         $interval,

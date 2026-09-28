@@ -33,6 +33,16 @@ function check_same(mixed $expected, mixed $actual, string $message): void
     );
 }
 
+$envFile = sys_get_temp_dir() . '/crypto-history-env-' . getmypid();
+file_put_contents($envFile, "CRYPTO_HISTORY_TEST_KEY=\"abc-123\"\n# comment\nCRYPTO_HISTORY_TEST_KEEP=replaced\n");
+putenv('CRYPTO_HISTORY_TEST_KEEP=original');
+crypto_load_env($envFile);
+check_same('abc-123', getenv('CRYPTO_HISTORY_TEST_KEY'), 'env file loads a quoted value');
+check_same('original', getenv('CRYPTO_HISTORY_TEST_KEEP'), 'env file does not override existing variables');
+putenv('CRYPTO_HISTORY_TEST_KEY');
+putenv('CRYPTO_HISTORY_TEST_KEEP');
+@unlink($envFile);
+
 try {
     CandleTime::intervalMs('2h');
     check(false, 'unknown interval throws');
