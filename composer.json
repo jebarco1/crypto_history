@@ -1,0 +1,17 @@
+{
+    "name": "jebarco1/crypto-history",
+    "description": "Backfill five years of crypto prices and look them up by coin, date, and time.",
+    "type": "project",
+    "require": {
+        "php": ">=8.1",
+        "ext-curl": "*",
+        "ext-json": "*",
+        "ext-pdo": "*",
+        "ext-pdo_mysql": "*"
+    },
+    "autoload": {
+        "psr-4": {
+            "CryptoHistory\\": "src/"
+        }
+    }
+}

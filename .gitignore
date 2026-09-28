@@ -1,0 +1,7 @@
+/data/*
+!/data/.gitkeep
+/.env
+/vendor/
+composer.lock
+.DS_Store
+*.log
