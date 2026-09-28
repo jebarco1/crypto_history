@@ -2,11 +2,9 @@
 
 declare(strict_types=1);
 
-foreach (['pdo_sqlite', 'curl'] as $extension) {
-    if (!extension_loaded($extension)) {
-        fwrite(STDERR, "PHP extension {$extension} is required.\n");
-        exit(1);
-    }
+if (!extension_loaded('curl')) {
+    fwrite(STDERR, "PHP extension curl is required.\n");
+    exit(1);
 }
 
 $vendor = dirname(__DIR__) . '/vendor/autoload.php';
@@ -105,16 +103,23 @@ function crypto_config(): array
 function crypto_database(?array $config = null): \PDO
 {
     static $pdo = null;
-    static $path = null;
+    static $cacheKey = null;
 
     $config ??= crypto_config();
-    $dbPath = (string) $config['db_path'];
-    if ($pdo instanceof \PDO && $path === $dbPath) {
+    $key = implode('|', [
+        (string) ($config['db_driver'] ?? 'mysql'),
+        (string) ($config['db_host'] ?? ''),
+        (string) ($config['db_port'] ?? ''),
+        (string) ($config['db_name'] ?? ''),
+        (string) ($config['db_user'] ?? ''),
+        (string) ($config['db_path'] ?? ''),
+    ]);
+    if ($pdo instanceof \PDO && $cacheKey === $key) {
         return $pdo;
     }
 
-    $pdo = \CryptoHistory\Database::connect($dbPath);
-    $path = $dbPath;
+    $pdo = \CryptoHistory\Database::connect($config);
+    $cacheKey = $key;
 
     return $pdo;
 }

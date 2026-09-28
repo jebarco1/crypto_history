@@ -13,15 +13,15 @@ Two different keys are involved:
 
 ### 1. Install PHP
 
-PHP 8.1 or newer, with the `pdo_sqlite` and `curl` extensions.
+PHP 8.1 or newer, with the `pdo_mysql` and `curl` extensions.
 
 Ubuntu or Debian:
 
 ```bash
 sudo apt update
-sudo apt install php-cli php-sqlite3 php-curl
+sudo apt install php-cli php-mysql php-curl
 php -v
-php -m | grep -E 'curl|pdo_sqlite'
+php -m | grep -E 'curl|pdo_mysql'
 ```
 
 ### 2. Create the environment file
@@ -34,7 +34,31 @@ cp .env.example .env
 
 `.env` stays on this machine. It is listed in `.gitignore`.
 
-### 3. Add a Binance API key
+### 3. Connect the MySQL database
+
+The app uses this database:
+
+| Setting | Value |
+| --- | --- |
+| Host | `localhost` |
+| Database | `u111742749_cyrptohistory` |
+| User | `u111742749_cyrptohistory` |
+
+Those three are already the defaults. Put the database password from your hosting panel in `.env`:
+
+```
+DB_HOST=localhost
+DB_PORT=3306
+DB_NAME=u111742749_cyrptohistory
+DB_USER=u111742749_cyrptohistory
+DB_PASSWORD=paste-the-database-password-here
+```
+
+`localhost` is right when PHP runs on the same hosting account. If the panel shows a different MySQL hostname, put that in `DB_HOST` instead.
+
+The first `php bin/backfill.php` or `php bin/token.php` creates the `prices`, `meta`, and `api_tokens` tables in that database. You do not need to create the tables by hand.
+
+### 4. Add a Binance API key
 
 Candle history is public, so this step is optional. Add a key when a full five-year download is rate-limited, or when you want the requests tied to your Binance account. Leave `BINANCE_API_KEY` empty to download with no key.
 
@@ -55,7 +79,7 @@ Candle history is public, so this step is optional. Add a key when a full five-y
 
 Save `.env`. The next `php bin/backfill.php` or `php bin/update.php` sends the key as the `X-MBX-APIKEY` header. You do not pass it on the command line.
 
-### 4. Choose the coins
+### 5. Choose the coins
 
 Edit `config/symbols.php`. Each ticker is loaded as a `{TICKER}USDT` pair. A coin listed on Binance less than five years ago is stored from its listing date.
 
@@ -69,7 +93,7 @@ return [
 
 Use `pair_overrides` in `config/config.php` when the Binance symbol is not `{TICKER}USDT`.
 
-### 5. Load five years of prices
+### 6. Load five years of prices
 
 ```bash
 php bin/backfill.php
@@ -85,9 +109,9 @@ php bin/backfill.php --symbols=BTC --days=30
 php bin/backfill.php --years=5
 ```
 
-The database file is `data/prices.sqlite`.
+Prices are stored in the MySQL database `u111742749_cyrptohistory`.
 
-### 6. Create a lookup token
+### 7. Create a lookup token
 
 This token protects your API. It is separate from the Binance key.
 
@@ -110,7 +134,7 @@ CRYPTO_API_TOKEN=choose-a-long-random-string
 
 A named token can be revoked. `CRYPTO_API_TOKEN` cannot. You can set both. Either one is accepted.
 
-### 7. Start the API
+### 8. Start the API
 
 ```bash
 php bin/serve.php
@@ -127,7 +151,7 @@ curl -H "Authorization: Bearer YOUR_LOOKUP_TOKEN" \
 
 `X-Api-Key: YOUR_LOOKUP_TOKEN` is also accepted. A token in the query string is ignored.
 
-### 8. Update prices every day
+### 9. Update prices every day
 
 ```bash
 php bin/update.php
@@ -205,7 +229,7 @@ Coins not listed in `config/symbols.php` return 404. A time with no stored candl
 
 ## Candle size
 
-`interval` in `config/config.php` defaults to `1h`, which is what makes a time lookup useful. `1m`, `5m`, `15m`, `4h`, and `1d` also work. One-minute history for five years is a much larger download. After any interval change, delete `data/prices.sqlite` and run the backfill again.
+`interval` in `config/config.php` defaults to `1h`, which is what makes a time lookup useful. `1m`, `5m`, `15m`, `4h`, and `1d` also work. One-minute history for five years is a much larger download. After any interval change, empty the `prices` table and run the backfill again.
 
 You can also set `CRYPTO_INTERVAL` and `CRYPTO_YEARS` in `.env`.
 

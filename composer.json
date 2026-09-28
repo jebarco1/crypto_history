@@ -7,7 +7,7 @@
         "ext-curl": "*",
         "ext-json": "*",
         "ext-pdo": "*",
-        "ext-pdo_sqlite": "*"
+        "ext-pdo_mysql": "*"
     },
     "autoload": {
         "psr-4": {

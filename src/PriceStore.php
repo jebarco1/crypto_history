@@ -16,7 +16,7 @@ final class PriceStore
 
     public function getMeta(string $key): ?string
     {
-        $stmt = $this->pdo->prepare('SELECT value FROM meta WHERE key = :key');
+        $stmt = $this->pdo->prepare('SELECT value FROM meta WHERE `key` = :key');
         $stmt->execute([':key' => $key]);
         $value = $stmt->fetchColumn();
 
@@ -25,10 +25,12 @@ final class PriceStore
 
     public function setMeta(string $key, string $value): void
     {
-        $stmt = $this->pdo->prepare(
-            'INSERT INTO meta (key, value) VALUES (:key, :value)
-             ON CONFLICT(key) DO UPDATE SET value = excluded.value'
-        );
+        $sql = $this->mysql()
+            ? 'INSERT INTO meta (`key`, value) VALUES (:key, :value)
+               ON DUPLICATE KEY UPDATE value = VALUES(value)'
+            : 'INSERT INTO meta (`key`, value) VALUES (:key, :value)
+               ON CONFLICT(`key`) DO UPDATE SET value = excluded.value';
+        $stmt = $this->pdo->prepare($sql);
         $stmt->execute([':key' => $key, ':value' => $value]);
     }
 
@@ -43,7 +45,7 @@ final class PriceStore
         if ($existing !== $interval) {
             throw new RuntimeException(
                 "Database holds {$existing} candles, but config interval is {$interval}. "
-                . "Delete data/prices.sqlite or set the interval back to {$existing}."
+                . "Clear the stored prices or set the interval back to {$existing}."
             );
         }
     }
@@ -67,7 +69,23 @@ final class PriceStore
             return 0;
         }
 
-        $sql = 'INSERT INTO prices (
+        $sql = $this->mysql()
+            ? 'INSERT INTO prices (
+                    symbol, pair, open_time, close_time, open, high, low, close, volume, quote_volume, trades
+                ) VALUES (
+                    :symbol, :pair, :open_time, :close_time, :open, :high, :low, :close, :volume, :quote_volume, :trades
+                )
+                ON DUPLICATE KEY UPDATE
+                    pair = VALUES(pair),
+                    close_time = VALUES(close_time),
+                    open = VALUES(open),
+                    high = VALUES(high),
+                    low = VALUES(low),
+                    close = VALUES(close),
+                    volume = VALUES(volume),
+                    quote_volume = VALUES(quote_volume),
+                    trades = VALUES(trades)'
+            : 'INSERT INTO prices (
                     symbol, pair, open_time, close_time, open, high, low, close, volume, quote_volume, trades
                 ) VALUES (
                     :symbol, :pair, :open_time, :close_time, :open, :high, :low, :close, :volume, :quote_volume, :trades
@@ -242,7 +260,7 @@ final class PriceStore
         $rows = $this->pdo->query(
             'SELECT symbol, pair, COUNT(*) AS candles, MIN(open_time) AS first_open, MAX(open_time) AS last_open
              FROM prices
-             GROUP BY symbol'
+             GROUP BY symbol, pair'
         )->fetchAll();
 
         $out = [];
@@ -270,8 +288,41 @@ final class PriceStore
         return (int) $value;
     }
 
+    private function mysql(): bool
+    {
+        return $this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql';
+    }
+
     private function migrate(): void
     {
+        if ($this->mysql()) {
+            $this->pdo->exec(
+                'CREATE TABLE IF NOT EXISTS prices (
+                    symbol VARCHAR(15) NOT NULL,
+                    pair VARCHAR(20) NOT NULL,
+                    open_time BIGINT NOT NULL,
+                    close_time BIGINT NOT NULL,
+                    open VARCHAR(64) NOT NULL,
+                    high VARCHAR(64) NOT NULL,
+                    low VARCHAR(64) NOT NULL,
+                    close VARCHAR(64) NOT NULL,
+                    volume VARCHAR(64) NOT NULL,
+                    quote_volume VARCHAR(64) NOT NULL,
+                    trades INT NOT NULL,
+                    PRIMARY KEY (symbol, open_time)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4'
+            );
+            $this->pdo->exec(
+                'CREATE TABLE IF NOT EXISTS meta (
+                    `key` VARCHAR(191) NOT NULL,
+                    value TEXT NOT NULL,
+                    PRIMARY KEY (`key`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4'
+            );
+
+            return;
+        }
+
         $this->pdo->exec(
             'CREATE TABLE IF NOT EXISTS prices (
                 symbol TEXT NOT NULL,
@@ -290,7 +341,7 @@ final class PriceStore
         );
         $this->pdo->exec(
             'CREATE TABLE IF NOT EXISTS meta (
-                key TEXT PRIMARY KEY,
+                `key` TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             )'
         );

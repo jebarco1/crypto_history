@@ -16,6 +16,23 @@ final class ApiTokens
 {
     public function __construct(private readonly PDO $pdo)
     {
+        if ($this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql') {
+            $this->pdo->exec(
+                'CREATE TABLE IF NOT EXISTS api_tokens (
+                    id INT NOT NULL AUTO_INCREMENT,
+                    name VARCHAR(40) NOT NULL,
+                    token_hash CHAR(64) NOT NULL,
+                    created_at VARCHAR(32) NOT NULL,
+                    last_used_at VARCHAR(32) NULL,
+                    PRIMARY KEY (id),
+                    UNIQUE KEY api_tokens_name (name),
+                    UNIQUE KEY api_tokens_hash (token_hash)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4'
+            );
+
+            return;
+        }
+
         $this->pdo->exec(
             'CREATE TABLE IF NOT EXISTS api_tokens (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -42,7 +59,7 @@ final class ApiTokens
                 ':created_at' => gmdate('Y-m-d\TH:i:s\Z'),
             ]);
         } catch (PDOException $e) {
-            if (str_contains($e->getMessage(), 'UNIQUE')) {
+            if ((string) $e->getCode() === '23000' || str_contains($e->getMessage(), 'UNIQUE') || str_contains($e->getMessage(), 'Duplicate')) {
                 throw new InvalidArgumentException(
                     "A token named {$name} already exists. Revoke it before creating another."
                 );

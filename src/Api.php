@@ -67,10 +67,14 @@ final class Api
             return;
         }
         if ($path === '/api/v1/health') {
+            $driver = (string) ($this->config['db_driver'] ?? 'mysql');
             $this->json([
                 'ok' => true,
                 'interval' => $this->interval,
-                'database' => is_file((string) $this->config['db_path']),
+                'driver' => $driver,
+                'database' => $driver === 'sqlite'
+                    ? (string) ($this->config['db_path'] ?? '')
+                    : (string) ($this->config['db_name'] ?? ''),
             ]);
 
             return;

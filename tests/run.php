@@ -85,7 +85,10 @@ try {
 
 $dbPath = sys_get_temp_dir() . '/crypto-history-test-' . getmypid() . '.sqlite';
 @unlink($dbPath);
-$pdo = Database::connect($dbPath);
+$pdo = Database::connect([
+    'db_driver' => 'sqlite',
+    'db_path' => $dbPath,
+]);
 $store = new PriceStore($pdo);
 $tokens = new ApiTokens($pdo);
 $store->assertInterval('1h');

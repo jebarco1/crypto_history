@@ -36,7 +36,7 @@ try {
     $symbols = (new Symbols($config))->select(
         isset($args['symbols']) && is_string($args['symbols']) ? $args['symbols'] : null
     );
-    $lock = new Lock(dirname((string) $config['db_path']) . '/sync.lock');
+    $lock = new Lock((string) $config['lock_path']);
     $lock->acquire();
     crypto_sync($config)->update($symbols);
 } catch (Throwable $e) {
