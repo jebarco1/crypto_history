@@ -1,0 +1,80 @@
+<?php
+
+declare(strict_types=1);
+
+foreach (['pdo_sqlite', 'curl'] as $extension) {
+    if (!extension_loaded($extension)) {
+        fwrite(STDERR, "PHP extension {$extension} is required.\n");
+        exit(1);
+    }
+}
+
+$vendor = dirname(__DIR__) . '/vendor/autoload.php';
+if (is_file($vendor)) {
+    require $vendor;
+} else {
+    spl_autoload_register(static function (string $class): void {
+        $prefix = 'CryptoHistory\\';
+        if (!str_starts_with($class, $prefix)) {
+            return;
+        }
+        $file = __DIR__ . '/' . str_replace('\\', '/', substr($class, strlen($prefix))) . '.php';
+        if (is_file($file)) {
+            require $file;
+        }
+    });
+}
+
+/** @return array<string, mixed> */
+function crypto_config(): array
+{
+    static $config = null;
+    if ($config !== null) {
+        return $config;
+    }
+
+    /** @var array<string, mixed> $loaded */
+    $loaded = require dirname(__DIR__) . '/config/config.php';
+    $symbols = [];
+    foreach ($loaded['symbols'] ?? [] as $symbol) {
+        $symbols[] = strtoupper(trim((string) $symbol));
+    }
+    $loaded['symbols'] = array_values(array_unique($symbols));
+    $loaded['quote'] = strtoupper((string) ($loaded['quote'] ?? 'USDT'));
+    $loaded['interval'] = (string) ($loaded['interval'] ?? '1h');
+    \CryptoHistory\CandleTime::intervalMs($loaded['interval']);
+
+    if ($loaded['symbols'] === []) {
+        throw new RuntimeException('config/symbols.php has no coins');
+    }
+    foreach ($loaded['symbols'] as $symbol) {
+        if (preg_match('/^[A-Z0-9]{2,15}$/', $symbol) !== 1) {
+            throw new RuntimeException("Invalid symbol in config/symbols.php: {$symbol}");
+        }
+    }
+
+    $config = $loaded;
+
+    return $config;
+}
+
+function crypto_store(?array $config = null): \CryptoHistory\PriceStore
+{
+    $config ??= crypto_config();
+
+    return new \CryptoHistory\PriceStore(\CryptoHistory\Database::connect((string) $config['db_path']));
+}
+
+function crypto_sync(?array $config = null): \CryptoHistory\HistorySync
+{
+    $config ??= crypto_config();
+    $interval = (string) $config['interval'];
+
+    return new \CryptoHistory\HistorySync(
+        new \CryptoHistory\BinanceClient((string) $config['binance_base'], (int) $config['request_pause_us']),
+        crypto_store($config),
+        new \CryptoHistory\Symbols($config),
+        $interval,
+        \CryptoHistory\CandleTime::intervalMs($interval),
+    );
+}
